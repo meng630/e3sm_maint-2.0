@@ -101,14 +101,34 @@ integer  ::      tau_est_idx = 0
 integer :: tpert_idx=-1, qpert_idx=-1, pblh_idx=-1
 logical :: prog_modal_aero
 logical :: linearize_pbl_winds
+
+integer,  parameter :: nbands = 152
+real(r8)            :: bbands_1d(nbands+1)
+real(r8), target    :: bbands(2,nbands)
+real(r8), target    :: mbands(nbands)
+
+integer,  parameter :: nhrs = 24
+real(r8)            :: bhrs_1d(nhrs+1)
+real(r8), target    :: bhrs(2,nhrs)  
+real(r8), target    :: mhrs(nhrs)
+real(r8)            :: lonb(nhrs+1)
+
 contains
 
 ! ===============================================================================
 
 subroutine diag_register
+   
+   use cam_history_support, only: add_hist_coord
     
    ! Request physics buffer space for fields that persist across timesteps.
    call pbuf_add_field('T_TTEND', 'global', dtype_r8, (/pcols,pver,dyn_time_lvls/), t_ttend_idx)
+
+   call add_hist_coord('pdfbands', nbands, 'Number of PDF bands',  &
+        'mm/day', mbands, bounds_name='prec_bnds', bounds=bbands)
+
+   call add_hist_coord('diurnal', nhrs, 'Diurnal cycle',  &
+        'GMT hour', mhrs, bounds_name='hr_bnds', bounds=bhrs)
 
 end subroutine diag_register
 
@@ -173,6 +193,18 @@ subroutine diag_init()
                      linearize_pbl_winds_out = linearize_pbl_winds)
 
    ! outfld calls in diag_phys_writeout
+
+   call addfld ('PDFPRECT',(/ 'pdfbands' /), 'A','fraction','PDF of PRECT')
+   call addfld ('PDFPRECL',(/ 'pdfbands' /), 'A','fraction','PDF of PRECL')
+   call addfld ('PDFPRECC',(/ 'pdfbands' /), 'A','fraction','PDF of PRECC')
+
+   call addfld ('ADFPRECT',(/ 'pdfbands' /), 'A','mm/day','amount distribution of PRECT')
+   call addfld ('ADFPRECL',(/ 'pdfbands' /), 'A','mm/day','amount distribution of PRECL')
+   call addfld ('ADFPRECC',(/ 'pdfbands' /), 'A','mm/day','amount distribution of PRECC')
+
+   call addfld ('DPRECT',(/ 'diurnal' /), 'A','mm/day','PRECT diurnal cycle ')
+   call addfld ('DPRECL',(/ 'diurnal' /), 'A','mm/day','PRECL diurnal cycle ')
+   call addfld ('DPRECC',(/ 'diurnal' /), 'A','mm/day','PRECC diurnal cycle ')     
 
    call addfld ('NSTEP',horiz_only,    'A','timestep','Model timestep')
    call addfld ('PHIS',horiz_only,    'I','m2/s2','Surface geopotential')
@@ -856,6 +888,31 @@ subroutine diag_init()
      wsresp_idx  = pbuf_get_index('wsresp')
      tau_est_idx  = pbuf_get_index('tau_est')
   end if
+
+  bbands_1d(1) = 0._r8
+  mbands(1) = 0._r8
+  do k=2, nbands
+      mbands(k) = 0.03 * 1.07**(k-2)    ! smallest bin center is 0.03, 7% growth of bin sizes
+  end do 
+  do k=2,nbands+1
+        bbands_1d(k) = sqrt(0.03**2 / 1.07) * 1.07**(k-2)
+  end do
+  do k=1,nbands
+        bbands(1,k)=bbands_1d(k)
+        bbands(2,k)=bbands_1d(k+1)
+  enddo    
+  bhrs_1d(1)=0._r8
+  lonb(1) = -7.5_r8
+  do k=2,nhrs+1
+     bhrs_1d(k)=bhrs_1d(k-1)+3600._r8
+     lonb(k)   =lonb(k-1)+15._r8
+  end do
+  lonb(1) = 352.5_r8    
+  do k=1,nhrs
+     bhrs(1,k)=bhrs_1d(k)
+     bhrs(2,k)=bhrs_1d(k+1)
+     mhrs(k)  = 0.5_r8 * (bhrs_1d(k)+bhrs_1d(k+1))
+  enddo
 
 end subroutine diag_init
 
@@ -1953,6 +2010,7 @@ subroutine diag_conv(state, ztodt, pbuf)
 !-----------------------------------------------------------------------
    use physconst,     only: cpair
    use tidal_diag,    only: get_tidal_coeffs
+   use time_manager,  only: get_curr_date
 
 ! Arguments:
 
@@ -1985,6 +2043,24 @@ subroutine diag_conv(state, ztodt, pbuf)
    real(r8):: snowl(pcols)                ! stratiform snow rate
    real(r8):: prect(pcols)                ! total (conv+large scale) precip rate
    real(r8) :: dcoef(4)                   ! for tidal component of T tend
+
+   real(r8):: prect1(pcols)
+   real(r8):: precl1(pcols)
+   real(r8):: precc1(pcols)
+   real(r8):: adfprecl(pcols,nbands)
+   real(r8):: adfprecc(pcols,nbands)
+   real(r8):: adfprect(pcols,nbands)
+   real(r8):: pdfprecl(pcols,nbands)
+   real(r8):: pdfprecc(pcols,nbands)
+   real(r8):: pdfprect(pcols,nbands)
+   real(r8):: dprecl(pcols,nhrs)
+   real(r8):: dprecc(pcols,nhrs)
+   real(r8):: dprect(pcols,nhrs)
+   real(r8):: tod1
+   integer  :: year, month
+   integer  :: day              ! day of month
+   integer  :: tod              ! time of day (seconds past 0Z) 
+   integer  :: itim_old
 
    lchnk = state%lchnk
    ncol  = state%ncol
@@ -2058,6 +2134,57 @@ subroutine diag_conv(state, ztodt, pbuf)
          call outfld(dcconnam(m), dqcond(m)%cnst(:,:,lchnk), pcols, lchnk)
       end if
    end do
+
+   prect1  = prect*1.e3_r8*86400._r8
+   precl1  = precl*1.e3_r8*86400._r8
+   precc1  = precc*1.e3_r8*86400._r8
+   pdfprecl= 0._r8
+   pdfprecc= 0._r8
+   pdfprect= 0._r8
+   adfprecl= 0._r8
+   adfprecc= 0._r8
+   adfprect= 0._r8
+   dprecl= 0._r8
+   dprecc= 0._r8
+   dprect= 0._r8
+
+   call get_curr_date(year, month, day, tod)
+   tod1=dble(tod)
+
+   do i=1, ncol
+     do k=1,nbands
+        if (prect1(i).gt.bbands_1d(k).and.prect1(i).le.bbands_1d(k+1)) then
+         pdfprect(i,k)=1._r8
+         adfprect(i,k)=prect1(i)
+        endif
+        if (precl1(i).gt.bbands_1d(k).and.precl1(i).le.bbands_1d(k+1)) then
+         pdfprecl(i,k)=1._r8
+         adfprecl(i,k)=precl1(i)
+        endif
+        if (precc1(i).gt.bbands_1d(k).and.precc1(i).le.bbands_1d(k+1)) then
+         pdfprecc(i,k)=1._r8
+         adfprecc(i,k)=precc1(i)
+        endif
+     end do
+
+     do k=1, nhrs
+      if (tod1 >= bhrs_1d(k) .and. tod1 < bhrs_1d(k+1)) then 
+         dprect(i,k)=prect1(i)
+         dprecl(i,k)=precl1(i)
+         dprecc(i,k)=precc1(i)
+      endif
+     end do
+   end do
+
+   call outfld('PDFPRECT', pdfprect * (1./0.07), pcols, lchnk )  ! bin width 0.07 
+   call outfld('PDFPRECL', pdfprecl * (1./0.07), pcols, lchnk )
+   call outfld('PDFPRECC', pdfprecc * (1./0.07), pcols, lchnk )
+   call outfld('ADFPRECT', adfprect * (1./0.07), pcols, lchnk )  ! bin width 0.07 
+   call outfld('ADFPRECL', adfprecl * (1./0.07), pcols, lchnk ) 
+   call outfld('ADFPRECC', adfprecc * (1./0.07), pcols, lchnk )  
+   call outfld('DPRECT', dprect * nhrs, pcols, lchnk )
+   call outfld('DPRECL', dprecl * nhrs, pcols, lchnk )
+   call outfld('DPRECC', dprecc * nhrs, pcols, lchnk )
 
 end subroutine diag_conv
 
