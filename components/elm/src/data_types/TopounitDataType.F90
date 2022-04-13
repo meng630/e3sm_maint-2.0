@@ -161,6 +161,11 @@ module TopounitDataType
           avgflag='A', long_name='atmospheric relative humidity', &
            ptr_gcell=this%rhbot, default='inactive')
 
+    this%rhobot(begt:endt) = spval
+     call hist_addfld1d (fname='RHO', units='kg/m**3',  &
+          avgflag='A', long_name='air density at atmospheric forcing height', &
+           ptr_gcell=this%rhobot, default='inactive')
+
     this%windbot(begt:endt) = spval
     call hist_addfld1d (fname='WIND', units='m/s',  &
          avgflag='A', long_name='atmospheric wind velocity magnitude', &

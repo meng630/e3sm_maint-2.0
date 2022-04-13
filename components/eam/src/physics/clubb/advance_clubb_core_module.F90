@@ -138,6 +138,7 @@ module advance_clubb_core_module
 #endif
                wphydrometp, wp2hmp, rtphmp_zt, thlphmp_zt, &        ! intent(in)
                host_dx, host_dy, &                                  ! intent(in)
+               l_clubb_het_sfc, thlp2_sfc, rtp2_sfc, rtpthlp_sfc, landfrac, &
                um, vm, upwp, vpwp, up2, vp2, &                      ! intent(inout)
                thlm, rtm, wprtp, wpthlp, &                          ! intent(inout)
                wp2, wp3, rtp2, rtp3, thlp2, thlp3, rtpthlp, &       ! intent(inout)
@@ -164,7 +165,7 @@ module advance_clubb_core_module
                wprcp, ice_supersat_frac, &                          ! intent(out)
                rcm_in_layer, cloud_cover, &                         ! intent(out)
                upwp_sfc_pert, vpwp_sfc_pert, &                      ! intent(in)
-               um_pert, vm_pert, upwp_pert, vpwp_pert )             ! intent(inout)
+               um_pert, vm_pert, upwp_pert, vpwp_pert, Skw_velocity_c )             ! intent(inout)
 
     ! Description:
     !   Subroutine to advance CLUBB one timestep
@@ -464,8 +465,8 @@ module advance_clubb_core_module
 
     !!! Input Variables
     logical, intent(in) ::  &
-      l_implemented ! True if CLUBB is being run within a large-scale host model,
-                    !   rather than a standalone single-column model.
+      l_implemented, & ! True if CLUBB is being run within a large-scale host model,
+      l_clubb_het_sfc  !   rather than a standalone single-column model.
 
     real( kind = core_rknd ), intent(in) ::  &
       dt  ! Current timestep duration    [s]
@@ -523,7 +524,8 @@ module advance_clubb_core_module
       wpthlp_sfc,   & ! w' theta_l' at surface   [(m K)/s]
       wprtp_sfc,    & ! w' r_t' at surface       [(kg m)/( kg s)]
       upwp_sfc,     & ! u'w' at surface          [m^2/s^2]
-      vpwp_sfc        ! v'w' at surface          [m^2/s^2]
+      vpwp_sfc,     & ! v'w' at surface          [m^2/s^2]
+      thlp2_sfc, rtp2_sfc, rtpthlp_sfc, landfrac
 
     ! Passive scalar variables
     real( kind = core_rknd ), intent(in), dimension(gr%nz,sclr_dim) :: &
@@ -564,6 +566,9 @@ module advance_clubb_core_module
       rtpthlp, & ! r_t'th_l' (momentum levels)                    [(kg/kg) K]
       wp2,     & ! w'^2 (momentum levels)                         [m^2/s^2]
       wp3        ! w'^3 (thermodynamic levels)                    [m^3/s^3]
+
+    real( kind = core_rknd ), intent(out), dimension(gr%nz) :: &
+      Skw_velocity_c
 
     ! Passive scalar variables
     real( kind = core_rknd ), intent(inout), dimension(gr%nz,sclr_dim) :: &
@@ -1385,6 +1390,7 @@ module advance_clubb_core_module
         call calc_surface_varnce( upwp_sfc, vpwp_sfc, wpthlp_sfc, wprtp_sfc, &      ! intent(in)
                              um(2), vm(2), Lscale_up(2), wpsclrp_sfc,        &      ! intent(in)
                              wp2_splat(1), tau_zm(1),                        &      ! intent(in)
+                             l_clubb_het_sfc, thlp2_sfc, rtp2_sfc, rtpthlp_sfc, landfrac, &
                              wp2(1), up2(1), vp2(1),                         &      ! intent(out)
                              thlp2(1), rtp2(1), rtpthlp(1),                  &      ! intent(out)
                              sclrp2(1,1:sclr_dim),                           &      ! intent(out)
@@ -1845,6 +1851,7 @@ module advance_clubb_core_module
       thlprcp_out(:) = thlprcp(:)
 #endif
 
+      Skw_velocity_c = Skw_velocity 
 
       !#######################################################################
       !#############            ACCUMULATE STATISTICS            #############

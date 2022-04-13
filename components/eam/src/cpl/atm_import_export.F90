@@ -71,6 +71,10 @@ contains
           if (index_x2a_Faoo_h2otemp /= 0) then
              cam_in(c)%h2otemp(i) = -x2a(index_x2a_Faoo_h2otemp,ig)
           end if
+
+          cam_in(c)%thlp2(i)    = x2a(index_x2a_Sl_thlp2, ig) 
+          cam_in(c)%rtp2(i)     = x2a(index_x2a_Sl_rtp2, ig)
+          cam_in(c)%rtpthlp(i)  = x2a(index_x2a_Sl_rtpthlp, ig)
            
           cam_in(c)%wsx(i)    = -x2a(index_x2a_Faxx_taux,ig)     
           cam_in(c)%wsy(i)    = -x2a(index_x2a_Faxx_tauy,ig)     

@@ -3664,6 +3664,9 @@ if ($clubb_sgs  =~ /$TRUE/io) {
    add_default($nl, 'clubb_mu');
    add_default($nl, 'clubb_ipdf_call_placement');
 
+  # heterogenous land-atmosphere coupling
+   add_default($nl, 'clubb_het_sfc')
+
 }
 
 # MMF Microphysics scheme

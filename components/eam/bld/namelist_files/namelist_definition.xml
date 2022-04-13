@@ -3237,6 +3237,15 @@ Lscale threshold: prevent large damping at low altitudes where Lscale is small
 Default: 100.0D0
 </entry>
 
+<!-- Flags for implementing code modifications under clasp project -->
+
+<entry id="clubb_het_sfc" type="logical" category="pblrad"
+       group="clubbpbl_diff_nl" valid_values="" >
+Switch to turn on implementation of the subgrid heterogeneous coupling 
+in the surface layer.  
+Default: False
+</entry>
+
 =======
 <!-- Ozone: Data (original CAM version) -->
 

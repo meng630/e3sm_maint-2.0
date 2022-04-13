@@ -519,6 +519,7 @@ contains
 #endif
     wphydrometp, wp2hmp, rtphmp, thlphmp, &                 ! intent(in)
     host_dx, host_dy, &                                     ! intent(in)
+    l_clubb_het_sfc, thlp2_sfc, rtp2_sfc, rtpthlp_sfc, landfrac, &         ! heterogeneous coupling intent (in)
     um, vm, upwp, vpwp, up2, vp2, &                         ! intent(inout)
     thlm, rtm, wprtp, wpthlp, &                             ! intent(inout)
     wp2, wp3, rtp2, rtp3, thlp2, thlp3, rtpthlp, &          ! intent(inout)
@@ -545,7 +546,8 @@ contains
     wprcp, ice_supersat_frac, &                             ! intent(out)
     rcm_in_layer, cloud_cover, &                            ! intent(out)
     upwp_sfc_pert, vpwp_sfc_pert, &                         ! intent(in)
-    um_pert, vm_pert, upwp_pert, vpwp_pert )                ! intent(inout)
+    um_pert, vm_pert, upwp_pert, vpwp_pert, &               ! intent(inout)
+    Skw_velocity )
 
     use advance_clubb_core_module, only : advance_clubb_core
 
@@ -556,7 +558,8 @@ contains
     implicit none
       !!! Input Variables
     logical, intent(in) ::  &
-      l_implemented ! Is this part of a larger host model (T/F) ?
+      l_implemented,   & ! Is this part of a larger host model (T/F) ?
+      l_clubb_het_sfc
 
     real( kind = core_rknd ), intent(in) ::  &
       dt  ! Current timestep duration    [s]
@@ -614,7 +617,8 @@ contains
       wpthlp_sfc,   & ! w' theta_l' at surface   [(m K)/s]
       wprtp_sfc,    & ! w' r_t' at surface       [(kg m)/( kg s)]
       upwp_sfc,     & ! u'w' at surface          [m^2/s^2]
-      vpwp_sfc        ! v'w' at surface          [m^2/s^2]
+      vpwp_sfc,     & ! v'w' at surface          [m^2/s^2]
+      thlp2_sfc, rtp2_sfc, rtpthlp_sfc, landfrac
 
     ! Passive scalar variables
     real( kind = core_rknd ), intent(in), dimension(gr%nz,sclr_dim) :: &
@@ -656,6 +660,9 @@ contains
       rtpthlp, & ! r_t' th_l' (momentum levels)                   [(kg/kg) K]
       wp2,     & ! w'^2 (momentum levels)                         [m^2/s^2]
       wp3        ! w'^3 (thermodynamic levels)                    [m^3/s^3]
+
+    real( kind = core_rknd ), intent(out), dimension(gr%nz) ::  &
+      Skw_velocity
 
     ! Passive scalar variables
     real( kind = core_rknd ), intent(inout), dimension(gr%nz,sclr_dim) :: &
@@ -743,6 +750,7 @@ contains
 #endif
       wphydrometp, wp2hmp, rtphmp, thlphmp, &                 ! intent(in)
       host_dx, host_dy, &                                     ! intent(in)
+      l_clubb_het_sfc, thlp2_sfc, rtp2_sfc, rtpthlp_sfc, landfrac, &
       um, vm, upwp, vpwp, up2, vp2, &                         ! intent(inout)
       thlm, rtm, wprtp, wpthlp, &                             ! intent(inout)
       wp2, wp3, rtp2, rtp3, thlp2, thlp3, rtpthlp, &          ! intent(inout)
@@ -769,7 +777,8 @@ contains
       wprcp, ice_supersat_frac, &                             ! intent(out)
       rcm_in_layer, cloud_cover, &                            ! intent(out)
       upwp_sfc_pert, vpwp_sfc_pert, &                         ! intent(in)
-      um_pert, vm_pert, upwp_pert, vpwp_pert )                ! intent(inout)
+      um_pert, vm_pert, upwp_pert, vpwp_pert, &               ! intent(inout)
+      Skw_velocity )
 
     err_code_api = err_code
 

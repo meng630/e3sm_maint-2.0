@@ -78,6 +78,7 @@ integer          :: history_budget_histfile_num    ! output history file number 
 integer  ::      qcwat_idx  = 0 
 integer  ::      tcwat_idx  = 0 
 integer  ::      lcwat_idx  = 0 
+integer  ::      ast_idx    = 0
 integer  ::      cld_idx    = 0 
 integer  ::      concld_idx = 0 
 integer  ::      tke_idx    = 0 
@@ -205,6 +206,10 @@ subroutine diag_init()
    call addfld ('DPRECT',(/ 'diurnal' /), 'A','mm/day','PRECT diurnal cycle ')
    call addfld ('DPRECL',(/ 'diurnal' /), 'A','mm/day','PRECL diurnal cycle ')
    call addfld ('DPRECC',(/ 'diurnal' /), 'A','mm/day','PRECC diurnal cycle ')     
+   
+   call addfld ('DAST',(/ 'diurnal' /), 'A','fraction','AST diurnal cycle ')
+   call addfld ('DCLD',(/ 'diurnal' /), 'A','fraction','CLD diurnal cycle ')
+   call addfld ('DCONCLD',(/ 'diurnal' /), 'A','fraction','CONCLD diurnal cycle ')
 
    call addfld ('NSTEP',horiz_only,    'A','timestep','Model timestep')
    call addfld ('PHIS',horiz_only,    'I','m2/s2','Surface geopotential')
@@ -863,6 +868,7 @@ subroutine diag_init()
   qcwat_idx  = pbuf_get_index('QCWAT',ierr)
   tcwat_idx  = pbuf_get_index('TCWAT',ierr)
   lcwat_idx  = pbuf_get_index('LCWAT',ierr)
+  ast_idx    = pbuf_get_index('AST')
   cld_idx    = pbuf_get_index('CLD')
   concld_idx = pbuf_get_index('CONCLD')
   
@@ -2031,6 +2037,10 @@ subroutine diag_conv(state, ztodt, pbuf)
    real(r8), pointer :: wsresp(:)                  ! first order response of winds to stress
    real(r8), pointer :: tau_est(:)                 ! estimated equilibrium stress
 
+   real(r8), pointer, dimension(:,:) :: cld      ! cloud fraction                               [fraction]
+   real(r8), pointer, dimension(:,:) :: concld   ! convective cloud fraction                    [fraction]
+   real(r8), pointer, dimension(:,:) :: ast      ! stratiform cloud fraction                    [fraction]
+
 ! Local variables:
    
    integer :: i, k, m, lchnk, ncol
@@ -2056,6 +2066,10 @@ subroutine diag_conv(state, ztodt, pbuf)
    real(r8):: dprecl(pcols,nhrs)
    real(r8):: dprecc(pcols,nhrs)
    real(r8):: dprect(pcols,nhrs)
+   real(r8):: dast(pcols,nhrs)
+   real(r8):: dcld(pcols,nhrs)
+   real(r8):: dconcld(pcols,nhrs)
+   real(r8):: ast1(pcols),cld1(pcols),concld1(pcols)
    real(r8):: tod1
    integer  :: year, month
    integer  :: day              ! day of month
@@ -2066,6 +2080,12 @@ subroutine diag_conv(state, ztodt, pbuf)
    ncol  = state%ncol
 
    rtdt = 1._r8/ztodt
+
+   itim_old = pbuf_old_tim_idx()
+
+   call pbuf_get_field(pbuf, ast_idx,     ast,     start=(/1,1,itim_old/), kount=(/pcols,pver,1/))
+   call pbuf_get_field(pbuf, cld_idx,     cld,     start=(/1,1,itim_old/), kount=(/pcols,pver,1/))
+   call pbuf_get_field(pbuf, concld_idx,  concld,  start=(/1,1,itim_old/), kount=(/pcols,pver,1/))
 
    call pbuf_get_field(pbuf, prec_dp_idx, prec_dp)
    call pbuf_get_field(pbuf, snow_dp_idx, snow_dp)
@@ -2147,11 +2167,19 @@ subroutine diag_conv(state, ztodt, pbuf)
    dprecl= 0._r8
    dprecc= 0._r8
    dprect= 0._r8
+   dast =0._r8
+   dcld =0._r8
+   dconcld =0._r8
 
    call get_curr_date(year, month, day, tod)
    tod1=dble(tod)
 
+   call cldfrax (ncol,ast,ast1)
+   call cldfrax (ncol,cld,cld1)
+   call cldfrax (ncol,concld,concld1)
+
    do i=1, ncol
+
      do k=1,nbands
         if (prect1(i).gt.bbands_1d(k).and.prect1(i).le.bbands_1d(k+1)) then
          pdfprect(i,k)=1._r8
@@ -2172,6 +2200,15 @@ subroutine diag_conv(state, ztodt, pbuf)
          dprect(i,k)=prect1(i)
          dprecl(i,k)=precl1(i)
          dprecc(i,k)=precc1(i)
+         if (prect1(i) .gt. 0.6_r8) then
+            dcld(i,k)=cld1(i)
+         endif
+         if (precc1(i) .gt. 0.6_r8) then
+            dconcld(i,k)=concld1(i)
+         endif
+         if (precl1(i) .gt. 0.6_r8) then
+            dast(i,k)=ast1(i)
+         endif
       endif
      end do
    end do
@@ -2185,10 +2222,41 @@ subroutine diag_conv(state, ztodt, pbuf)
    call outfld('DPRECT', dprect * nhrs, pcols, lchnk )
    call outfld('DPRECL', dprecl * nhrs, pcols, lchnk )
    call outfld('DPRECC', dprecc * nhrs, pcols, lchnk )
+   call outfld('DAST', dast * nhrs, pcols, lchnk )
+   call outfld('DCLD', dcld * nhrs, pcols, lchnk )
+   call outfld('DCONCLD', dconcld * nhrs, pcols, lchnk )
 
 end subroutine diag_conv
 
 !===============================================================================
+subroutine cldfrax (ncol,cldfra,clt)
+
+   integer i, k
+   integer, intent(in) ::  ncol
+   real(r8), intent(in)  :: cldfra(pcols,pver)
+   real(r8), intent(out) :: clt(pcols)
+   real(r8):: fr,ftmp,cldfra1(pcols,pver)
+ 
+   clt=1._r8
+   cldfra1=cldfra
+ 
+    do i=1, ncol
+       fr  = 0._r8
+       do k=2, pver
+           if (cldfra1(i,k).ge.1.e-2_r8) then
+             fr=(1._r8-min(max(cldfra1(i,k),cldfra1(i,k-1)),1._r8))/ &
+               max(1.e-3_r8,(1._r8-min(cldfra1(i,k-1), 1._r8)))
+             fr = min(1._r8,fr)
+             ftmp = clt(i) * fr
+             clt(i) = ftmp
+           else
+             cldfra1(i,k) = 0.
+           end if
+       end do
+       clt(i) = 1._r8 - clt(i)
+    end do
+ 
+ end subroutine cldfrax
 
 subroutine diag_surf (cam_in, cam_out, ps, trefmxav, trefmnav )
 

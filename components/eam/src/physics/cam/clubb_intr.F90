@@ -63,6 +63,7 @@ module clubb_intr
 #endif
 
   logical, public :: do_cldcool
+  logical, public :: l_clubb_het_sfc
 
   ! ------------ !
   ! Private data !
@@ -441,6 +442,7 @@ end subroutine clubb_init_cnst
 #ifdef CLUBB_SGS
     logical :: clubb_history, clubb_rad_history, clubb_cloudtop_cooling, clubb_rainevap_turb, &
                clubb_stabcorrect, clubb_expldiff ! Stats enabled (T/F)
+    logical :: clubb_het_sfc  !This flag sets options for the implementation of heterogeneous coupling 
     logical :: clubb_use_sgv !PMA This flag controls tuning for tpert and gustiness
     logical :: clubb_vert_avg_closure !XZheng This flag sets four clubb config flags for pdf_closure and the trapezoidal rule to  compute the varibles that are output from high order closure
     integer :: clubb_ipdf_call_placement  !XZheng This flag sets options for the placement of the call to CLUBB's PDF.
@@ -452,7 +454,7 @@ end subroutine clubb_init_cnst
                                 clubb_do_adv, clubb_do_deep, clubb_timestep, clubb_stabcorrect, &
                                 clubb_rnevap_effic, clubb_liq_deep, clubb_liq_sh, clubb_ice_deep, &
                                 clubb_ice_sh, clubb_tk1, clubb_tk2, relvar_fix, clubb_use_sgv, &
-                                clubb_vert_avg_closure, clubb_ipdf_call_placement
+                                clubb_vert_avg_closure, clubb_ipdf_call_placement, clubb_het_sfc
 
 
     !----- Begin Code -----
@@ -471,6 +473,7 @@ end subroutine clubb_init_cnst
     clubb_vert_avg_closure = .true.
     clubb_ipdf_call_placement = -999
 
+    l_clubb_het_sfc = .false.
 
     !  Read namelist to determine if CLUBB history should be called
     if (masterproc) then
@@ -519,9 +522,11 @@ end subroutine clubb_init_cnst
       call mpibcast(clubb_use_sgv,            1,   mpilog,   0, mpicom)
       call mpibcast(clubb_vert_avg_closure,   1,   mpilog,   0, mpicom)
       call mpibcast(clubb_ipdf_call_placement,   1,   mpiint,   0, mpicom)
+      call mpibcast(clubb_het_sfc,            1,   mpilog,   0, mpicom)
 #endif
 
     !  Overwrite defaults if they are true
+    if (clubb_het_sfc) l_clubb_het_sfc = .true. 
     if (clubb_ipdf_call_placement > 0) ipdf_call_placement = clubb_ipdf_call_placement
     if (clubb_history) l_stats = .true.
     if (clubb_rad_history) l_output_rad_files = .true.
@@ -908,6 +913,14 @@ end subroutine clubb_init_cnst
     call addfld ('VMAGCL',        horiz_only,     'A',             '-', 'CLUBB gustiness enhancement')
     call addfld ('TPERTBLT',        horiz_only,     'A',             'K', 'perturbation temperature at PBL top')
 
+    ! HET L-A coupling related output
+    call addfld ('RTP3_CLUBB',     (/ 'ilev' /),  'A',     '-', '-')
+    call addfld ('THLP3_CLUBB',     (/ 'ilev' /),  'A',     '-', '-')
+    call addfld ('Skw_velocity_CLUBB',     (/ 'ilev' /),  'A',     '-', '-')
+    call addfld ('THLP2_SFC_HET',   horiz_only,  'A',     '-', '-')
+    call addfld ('RTP2_SFC_HET',    horiz_only,  'A',     '-', '-')
+    call addfld ('RTPTHLP_SFC_HET', horiz_only,  'A',     '-', '-')
+
     !  Initialize statistics, below are dummy variables
     dum1 = 300._r8
     dum2 = 1200._r8
@@ -1258,6 +1271,13 @@ end subroutine clubb_init_cnst
    real(core_rknd) :: wprtp_sfc                        ! w' r_t' at surface                            [(kg m)/( kg s)]
    real(core_rknd) :: upwp_sfc                         ! u'w' at surface                               [m^2/s^2]
    real(core_rknd) :: vpwp_sfc                         ! v'w' at surface                               [m^2/s^2]
+   ! CLASP
+   real(core_rknd) :: thlp2_sfc                        ! surface variance
+   real(core_rknd) :: rtp2_sfc                         ! surface variance
+   real(core_rknd) :: rtpthlp_sfc                      ! surface covariance
+   real(core_rknd) :: landfrac 
+   
+   real(core_rknd) :: Skw_velocity(pverp) 
    real(core_rknd) :: sclrpthvp_inout(pverp,sclr_dim)     ! momentum levels (< sclr' th_v' >)             [units vary]
    real(core_rknd) :: sclrm_forcing(pverp,sclr_dim)    ! Passive scalar forcing                        [{units vary}/s]
    real(core_rknd) :: wpsclrp_sfc(sclr_dim)            ! Scalar flux at surface                        [{units vary} m/s]
@@ -1364,6 +1384,14 @@ end subroutine clubb_init_cnst
    real(r8) :: rrho                             ! Inverse of air density                        [1/kg/m^3]
    real(r8) :: kinwat(pcols)                    ! Kinematic water vapor flux                    [m/s]
    real(r8) :: latsub
+   
+   ! HET L-A coupling
+   real(r8) :: Skw_velocity_output(pcols,pverp) 
+   real(r8) :: rtp3_output(pcols,pverp)  
+   real(r8) :: thlp3_output(pcols,pverp) 
+   real(r8) :: thlp2_sfc_output(pcols)
+   real(r8) :: rtp2_sfc_output(pcols)
+   real(r8) :: rtpthlp_sfc_output(pcols)   
 
    integer  :: ktop(pcols,pver)
    integer  :: ncvfin(pcols)
@@ -2040,6 +2068,15 @@ end subroutine clubb_init_cnst
       upwp_sfc   = real(cam_in%wsx(i), kind = core_rknd)/rho_ds_zm(1)                                 ! Surface meridional momentum flux
       vpwp_sfc   = real(cam_in%wsy(i), kind = core_rknd)/rho_ds_zm(1)                                 ! Surface zonal momentum flux
 
+      thlp2_sfc   = real(cam_in%thlp2(i), kind = core_rknd)
+      rtp2_sfc    = real(cam_in%rtp2(i), kind = core_rknd)
+      rtpthlp_sfc = real(cam_in%rtpthlp(i), kind = core_rknd)
+      landfrac    = real(cam_in%landfrac(i), kind = core_rknd)
+
+      thlp2_sfc_output(i)   = cam_in%thlp2(i)
+      rtp2_sfc_output(i)    = cam_in%rtp2(i)
+      rtpthlp_sfc_output(i) = cam_in%rtpthlp(i)
+
       ! ------------------------------------------------- !
       ! Apply TMS                                         !
       ! ------------------------------------------------- !
@@ -2267,6 +2304,7 @@ end subroutine clubb_init_cnst
 #endif
               wphydrometp, wp2hmp, rtphmp_zt, thlphmp_zt, &                ! intent(in)
               host_dx, host_dy, &                                          ! intent(in)
+              l_clubb_het_sfc, thlp2_sfc, rtp2_sfc, rtpthlp_sfc, landfrac, &         ! heterogeneous coupling intent (in)
               um_in, vm_in, upwp_in, &                                     ! intent(inout)
               vpwp_in, up2_in, vp2_in, &                                   ! intent(inout)
               thlm_in, rtm_in, wprtp_in, wpthlp_in, &                      ! intent(inout)
@@ -2283,7 +2321,7 @@ end subroutine clubb_init_cnst
               wprcp_out, ice_supersat_frac, &                              ! intent(out)
               rcm_in_layer_out, cloud_cover_out, &                         ! intent(out)
               upwp_sfc_pert, vpwp_sfc_pert, &                              ! intent(in)
-              um_pert_col, vm_pert_col, upwp_pert_col, vpwp_pert_col)      ! intent(inout)
+              um_pert_col, vm_pert_col, upwp_pert_col, vpwp_pert_col, Skw_velocity)      ! intent(inout)
          call t_stopf('advance_clubb_core')
 
          if ( err_code == clubb_fatal_error ) then
@@ -2388,6 +2426,10 @@ end subroutine clubb_init_cnst
       end if
 
       !  Arrays need to be "flipped" to CAM grid
+      do k=1, pverp
+         Skw_velocity_output(i,k)  = real(Skw_velocity(pverp-k+1), kind = r8) 
+      enddo 
+
       do k=1,pverp
 
           um(i,k)           = real(um_in(pverp-k+1), kind = r8)
@@ -2425,6 +2467,9 @@ end subroutine clubb_init_cnst
           pdf_zm_varnce_w_1(i,k) = pdf_zm_varnce_w_1_inout(pverp-k+1)
           pdf_zm_varnce_w_2(i,k) = pdf_zm_varnce_w_2_inout(pverp-k+1)
           pdf_zm_mixt_frac(i,k) =  pdf_zm_mixt_frac_inout(pverp-k+1)
+
+          rtp3_output(i,k)   = real(rtp3_in(pverp-k+1), kind = r8)
+          thlp3_output(i,k)  = real(thlp3_in(pverp-k+1), kind = r8)
 
           do ixind=1,edsclr_dim
               edsclr_out(k,ixind) = real(edsclr_in(pverp-k+1,ixind), kind = r8)
@@ -3009,6 +3054,14 @@ end subroutine clubb_init_cnst
    call outfld( 'QT',               qt_output,               pcols, lchnk )
    call outfld( 'SL',               sl_output,               pcols, lchnk )
    call outfld( 'CONCLD',           concld,                  pcols, lchnk )
+
+   call outfld ('Skw_velocity_CLUBB',  Skw_velocity_output, pcols, lchnk)
+   call outfld ('RTP3_CLUBB',  rtp3_output, pcols, lchnk)
+   call outfld ('THLP3_CLUBB', thlp3_output,  pcols, lchnk)
+
+   call outfld('THLP2_SFC_HET', thlp2_sfc_output, pcols, lchnk)
+   call outfld('RTP2_SFC_HET', rtp2_sfc_output, pcols, lchnk)
+   call outfld('RTPTHLP_SFC_HET', rtpthlp_sfc_output, pcols, lchnk)
 
    !  Output CLUBB history here
    if (l_stats) then

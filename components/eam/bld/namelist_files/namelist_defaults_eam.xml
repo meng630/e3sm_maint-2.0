@@ -1716,4 +1716,7 @@ with se_tstep, dt_remap_factor, dt_tracer_factor set to -1
 <micro_mg_berg_eff_factor phys="default" clubb_sgs="1"> 0.7D0      </micro_mg_berg_eff_factor>
 <cldfrc_dp1  phys="default"> 0.018D0    </cldfrc_dp1>
 
+<!-- implement subgrid heterogeneous coupling -->
+<clubb_het_sfc>  .false. </clubb_het_sfc>
+
 </namelist_defaults>

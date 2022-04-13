@@ -15,6 +15,7 @@ module surface_varnce_module
   subroutine calc_surface_varnce( upwp_sfc, vpwp_sfc, wpthlp_sfc, wprtp_sfc, & 
                              um_sfc, vm_sfc, Lscale_up_sfc, wpsclrp_sfc, & 
                              wp2_splat_sfc, tau_zm_sfc, &
+                             l_clubb_het_sfc, thlp2_het, rtp2_het, rtpthlp_het, landfrac, &
                              wp2_sfc, up2_sfc, vp2_sfc, & 
                              thlp2_sfc, rtp2_sfc, rtpthlp_sfc, & 
                              sclrp2_sfc, & 
@@ -111,7 +112,11 @@ module surface_varnce_module
       vm_sfc,        & ! Surface v wind component, <v>          [m/s]
       Lscale_up_sfc, & ! Upward component of Lscale at surface  [m] 
       wp2_splat_sfc, & ! Tendency of <w'^2> due to splatting of eddies at zm(1) [m^2/s^3]
-      tau_zm_sfc       ! Turbulent dissipation time at level zm(1)  [s]
+      tau_zm_sfc,    & ! Turbulent dissipation time at level zm(1)  [s]
+      thlp2_het, rtp2_het, rtpthlp_het, landfrac 
+
+    logical, intent(in) :: &
+      l_clubb_het_sfc
 
     real( kind = core_rknd ), intent(in), dimension(sclr_dim) ::  & 
       wpsclrp_sfc    ! Passive scalar flux, <w'sclr'>|_sfc   [units m/s]
@@ -223,6 +228,12 @@ module surface_varnce_module
           wp2_sfc     = 1.75_core_rknd * ustar**2
 
        endif
+
+       if (l_clubb_het_sfc .and. landfrac > 0.99999_core_rknd) then   ! apply to land only 
+         thlp2_sfc  = thlp2_het 
+         rtp2_sfc   = rtp2_het 
+         rtpthlp_sfc = rtpthlp_het
+       endif 
        
        thlp2_sfc = max( thl_tol**2, thlp2_sfc )
        rtp2_sfc = max( rt_tol**2, rtp2_sfc )
@@ -374,13 +385,20 @@ module surface_varnce_module
        ! Brian Griffin; February 2, 2008.
 
        thlp2_sfc = 0.4_core_rknd * a_const * ( wpthlp_sfc / uf )**2
-       thlp2_sfc = max( thl_tol**2, thlp2_sfc )
 
        rtp2_sfc = 0.4_core_rknd * a_const * ( wprtp_sfc / uf )**2
-       rtp2_sfc = max( rt_tol**2, rtp2_sfc )
 
        rtpthlp_sfc = 0.2_core_rknd * a_const &
                      * ( wpthlp_sfc / uf ) * ( wprtp_sfc / uf )
+
+      if (l_clubb_het_sfc .and. landfrac > 0.99999_core_rknd) then   ! apply to land only
+        thlp2_sfc  = thlp2_het 
+        rtp2_sfc   = rtp2_het 
+        rtpthlp_sfc = rtpthlp_het
+      endif 
+       
+      thlp2_sfc = max( thl_tol**2, thlp2_sfc )
+      rtp2_sfc = max( rt_tol**2, rtp2_sfc )
 
        ! Add effect of vertical compression of eddies on horizontal gustiness.
        ! First, ensure that wp2_sfc does not make the correlation 

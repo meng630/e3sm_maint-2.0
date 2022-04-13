@@ -758,6 +758,31 @@ contains
        units    = 'Unitless'
        attname  = 'Sa_uovern'
        call metadata_set(attname, longname, stdname, units)
+    end if 
+
+    if (trim(cime_model) == 'e3sm') then       
+       ! scalar variance
+       call seq_flds_add(l2x_states,"Sl_thlp2")
+       call seq_flds_add(x2a_states,"Sl_thlp2")
+       longname = 'Temperature variance'
+       stdname  = 'Temperature variance'
+       units    = 'Unitless'
+       attname  = 'Sl_thlp2'
+       call metadata_set(attname, longname, stdname, units)
+       call seq_flds_add(l2x_states,"Sl_rtp2")
+       call seq_flds_add(x2a_states,"Sl_rtp2")
+       longname = 'Humidity variance'
+       stdname  = 'Humidity variance'
+       units    = 'Unitless'
+       attname  = 'Sl_rtp2'
+       call metadata_set(attname, longname, stdname, units)
+       call seq_flds_add(l2x_states,"Sl_rtpthlp")
+       call seq_flds_add(x2a_states,"Sl_rtpthlp")
+       longname = 'Temperature-Humidity variance'
+       stdname  = 'Temperature-Humidity variance'
+       units    = 'Unitless'
+       attname  = 'Sl_rtpthlp'
+       call metadata_set(attname, longname, stdname, units)
     end if
 
     ! convective precipitation rate
