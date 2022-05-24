@@ -306,7 +306,7 @@ contains
          p2c_scale_type=unity, c2l_scale_type= urbanf, l2g_scale_type=unity)
 
     !!! scalar (co-)variance by Dalei Hao 09/08/2021         
-    !!! HET method     
+    !!! HET method    
     call calculate_scalar_covaiance_het(bounds, &
          eflx_sh_tot     (bounds%begp:bounds%endp) , &
          eflx_lh_tot    (bounds%begp:bounds%endp), &
@@ -323,8 +323,8 @@ contains
          rtpthlp_het_grc(bounds%begg:bounds%endg)      , &
          p2c_scale_type=unity, c2l_scale_type= urbanf, l2g_scale_type=unity)
     !!! end
-    
-    
+
+   
     if (use_cn .or. use_fates) then
        call c2g(bounds, &
             nee    (bounds%begc:bounds%endc)   , &

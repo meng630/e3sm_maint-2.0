@@ -231,7 +231,7 @@ module surface_varnce_module
 
        if (l_clubb_het_sfc .and. landfrac > 0.99999_core_rknd) then   ! apply to land only 
          thlp2_sfc  = thlp2_het 
-         rtp2_sfc   = rtp2_het 
+         rtp2_sfc   = rtp2_het
          rtpthlp_sfc = rtpthlp_het
        endif 
        
